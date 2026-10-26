@@ -1,0 +1,4 @@
+requests>=2.32,<3
+python-dotenv>=1.0,<2
+# 2.x cần Python >= 3.10; trên Python 3.9 (có sẵn của macOS) pip tự chọn bản 1.x
+google-genai>=1.40,<3
