@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 
 from google import genai
 from google.genai import errors, types
 
+import telegram_service
 from config import Config
 
 log = logging.getLogger(__name__)
@@ -28,13 +30,24 @@ và tạo một bản tin buổi sáng ngắn gọn, trực quan, dễ đọc tr
 4. Định dạng: thêm các icon emoji phù hợp (☀️, 🌧️, ☂️, 🕶️, 🏍️) để tạo cảm giác thân thiện.
 
 Quy tắc bắt buộc:
-- Chỉ dùng Markdown cơ bản của Telegram: *in đậm* (một dấu sao), _in nghiêng_; gạch đầu dòng bằng "•". \
-Không dùng tiêu đề "#", bảng, "**", liên kết hay code block.
+- Định dạng bằng thẻ HTML của Telegram, chỉ dùng: <b>in đậm</b> cho tiêu đề từng phần, <i>in nghiêng</i>, \
+và tối đa một khối <blockquote>...</blockquote> cho cảnh báo quan trọng nhất. Gạch đầu dòng bằng "•". \
+Không dùng Markdown (*, **, _, #), bảng, liên kết hay thẻ nào khác; không viết ký tự <, >, & đứng riêng.
 - Tối đa khoảng 1500 ký tự.
 - Chỉ dựa vào dữ liệu được cung cấp, không bịa số liệu. Trường "spikes" là các điểm đột biến đã tính sẵn; \
 "alerts" là cảnh báo chính thức (nếu có, phải nêu rõ).
-- Không cần ghi tên địa điểm ở đầu bản tin (đã có sẵn).
+- Đầu tin đã có sẵn tên địa điểm và dòng nhiệt độ/mưa/UV; cuối tin đã có bảng dự báo theo giờ. \
+Không ghi lại tên địa điểm và không liệt kê dự báo từng giờ.
 """
+
+ALLOWED_TAG = re.compile(r"&lt;(/?)(b|i|u|s|blockquote)&gt;")
+MARKDOWN_BOLD = re.compile(r"\*\*?(\S[^*\n]*?)\*\*?")
+
+
+def to_telegram_html(text: str) -> str:
+    """Escape output của AI, chỉ giữ lại các thẻ được phép; đổi Markdown đậm (nếu model lỡ dùng) sang <b>."""
+    text = ALLOWED_TAG.sub(r"<\1\2>", telegram_service.escape(text))
+    return MARKDOWN_BOLD.sub(r"<b>\1</b>", text)
 
 
 class AIError(Exception):
@@ -85,7 +98,7 @@ def generate_briefing(config: Config, weather: dict) -> str:
             text = (response.text or "").strip()
             if text:
                 log.info("Đã tạo bản tin bằng %s", model)
-                return text
+                return to_telegram_html(text)
             last_error = AIError(f"{model} trả về nội dung rỗng")
             break
 
@@ -93,18 +106,18 @@ def generate_briefing(config: Config, weather: dict) -> str:
 
 
 def fallback_briefing(weather: dict) -> str:
-    """Bản tóm tắt thô khi không dùng được AI."""
+    """Bản tóm tắt thô (HTML) khi không dùng được AI."""
     s = weather["summary"]
     lines = [
-        "🌤️ *Bản tin thời tiết 24h tới*",
-        f"🌡️ Nhiệt độ: {s['temp_min_c']:.0f}–{s['temp_max_c']:.0f}°C (cảm giác tới {s['feelslike_max_c']:.0f}°C)",
-        f"🌧️ Khả năng mưa cao nhất: {s['max_chance_of_rain']}% (tổng {s['total_precip_mm']} mm)",
-        f"🕶️ UV cao nhất: {s['max_uv']:.0f}",
+        "🌤️ <b>Bản tin thời tiết 24h tới</b>",
+        f"🥵 Cảm giác nóng nhất: {s['feelslike_max_c']:.0f}°C",
+        f"💧 Tổng lượng mưa: {s['total_precip_mm']} mm",
     ]
     if weather["spikes"]:
         lines.append("")
-        lines.append("⚡ *Điểm đáng chú ý:*")
-        lines.extend(f"• {spike}" for spike in weather["spikes"])
-    for alert in weather["alerts"]:
-        lines.append(f"🚨 {alert['headline'] or alert['event']}")
+        lines.append("⚡ <b>Điểm đáng chú ý:</b>")
+        lines.extend(f"• {telegram_service.escape(spike)}" for spike in weather["spikes"])
+    if weather["alerts"]:
+        alerts = "\n".join(f"🚨 {telegram_service.escape(a['headline'] or a['event'] or '')}" for a in weather["alerts"])
+        lines.append(f"\n<blockquote>{alerts}</blockquote>")
     return "\n".join(lines)

@@ -4,7 +4,7 @@ Công cụ chạy **100% trên GitHub Actions** (không phụ thuộc máy Mac):
 
 Bạn có thể **đổi địa điểm bằng cách nhắn cho bot** (ghim vị trí Telegram hoặc lệnh `/location`); bot đọc tin nhắn vào mỗi lần chạy buổi sáng.
 
-**Quyết định đã chốt:** Nền tảng = GitHub Actions (repo **private**) · Weather API = WeatherAPI.com · AI = Google Gemini · Telegram `parse_mode` = Markdown (có fallback) · Múi giờ = Asia/Ho_Chi_Minh · Địa điểm mặc định = Hà Nội (`Hanoi`) · Model AI = `gemini-3.8-flash` (free tier, dự phòng `gemini-3.6-flash` → `gemini-2.5-flash`) · Đổi địa điểm = đọc tin nhắn lúc chạy (`getUpdates`), lưu vào `location.json` rồi commit ngược vào repo.
+**Quyết định đã chốt:** Nền tảng = GitHub Actions (repo **private**) · Weather API = WeatherAPI.com · AI = Google Gemini · Telegram `parse_mode` = HTML (có fallback) · Múi giờ = Asia/Ho_Chi_Minh · Địa điểm mặc định = Hà Nội (`Hanoi`) · Model AI = `gemini-3.8-flash` (free tier, dự phòng `gemini-3.6-flash` → `gemini-2.5-flash`) · Đổi địa điểm = đọc tin nhắn lúc chạy (`getUpdates`), lưu vào `location.json` rồi commit ngược vào repo.
 
 ---
 
@@ -71,9 +71,9 @@ GitHub cron (01:00 UTC = 08:00 VN)  ──hoặc──  bấm "Run workflow" (ch
         ├─► weather_service.fetch_forecast()   # JSON thô WeatherAPI theo địa điểm hiện tại
         │        └─► normalize_next_24h()      # list 24 bản ghi theo giờ + alerts
         │
-        ├─► ai_service.generate_briefing()     # prompt + data -> Markdown
+        ├─► ai_service.generate_briefing()     # prompt + data -> HTML (đã lọc thẻ)
         │
-        └─► telegram_service.send_message()    # đầu tin: 📍 địa điểm (+ thông báo đổi/lỗi)
+        └─► telegram_service.send_message()    # đầu tin: 📍 địa điểm + dòng tóm tắt; cuối tin: bảng theo giờ thu gọn
         │
         ▼
   weather.yml (bước cuối, chạy cả khi main lỗi): nếu location.json đổi -> git commit + push
@@ -234,16 +234,16 @@ Dùng `actions/checkout@v7`, `actions/setup-python@v7` (bản major mới nhất
   > 1. **Tổng quan ngắn:** thời tiết chủ đạo, nhiệt độ cao nhất/thấp nhất, khả năng mưa.
   > 2. **Điểm đột biến (Spikes/Alerts):** nêu chính xác khung giờ thay đổi đột ngột (nhiệt độ, mưa, UV).
   > 3. **Cảnh báo sức khỏe & vật dụng cần mang:** gợi ý cụ thể dựa trên các điểm đột biến (ô/áo mưa, áo chống nắng, kính râm, khẩu trang, uống nước).
-  > 4. **Định dạng:** Markdown + emoji (☀️ 🌧️ ☂️ 🕶️ 🏍️).
-- Ràng buộc bổ sung: chỉ dùng Telegram-Markdown cơ bản (`*bold*`, `_italic_`, gạch đầu dòng `•`), không bảng/heading `#`; tối đa ~1500 ký tự; chỉ dựa vào dữ liệu được cung cấp, không bịa số.
+  > 4. **Định dạng:** HTML của Telegram + emoji (☀️ 🌧️ ☂️ 🕶️ 🏍️).
+- Ràng buộc bổ sung: chỉ dùng thẻ `<b>`, `<i>` và tối đa một `<blockquote>` (gạch đầu dòng `•`), không Markdown/bảng/liên kết; output được escape lại, chỉ giữ các thẻ cho phép (`to_telegram_html`); tối đa ~1500 ký tự; chỉ dựa vào dữ liệu được cung cấp, không bịa số.
 
 ### 5.5 `telegram_service.py`
-- **Gửi:** `POST https://api.telegram.org/bot<TOKEN>/sendMessage` với `chat_id`, `text`, `parse_mode="Markdown"`, `disable_web_page_preview=true`.
+- **Gửi:** `POST https://api.telegram.org/bot<TOKEN>/sendMessage` với `chat_id`, `text`, `parse_mode="HTML"`, `disable_web_page_preview=true`.
 - `send_message(config, text) -> None`:
-  1. Thử gửi Markdown.
-  2. Nếu API trả `400` với mô tả chứa `can't parse entities` → gửi lại **plain text** (bỏ `parse_mode`) sau khi loại ký tự Markdown.
+  1. Thử gửi HTML.
+  2. Nếu API trả `400` với mô tả chứa `can't parse entities` → gửi lại **plain text** (bỏ `parse_mode`) sau khi bỏ thẻ HTML và giải mã `&amp;`, `&lt;`...
   3. Lỗi khác (401 token sai, 403 bot bị chặn, 429) → raise `TelegramError` kèm mô tả.
-- Tin dài hơn 4096 ký tự: tách theo dòng thành nhiều tin.
+- Tin dài hơn 4096 ký tự: tách theo dòng thành nhiều tin; thẻ đang mở ở chỗ cắt được đóng lại và mở lại ở tin sau.
 - **Nhận:** `get_updates(config, offset=None) -> list[dict]` (`GET .../getUpdates`, `timeout=0`, `allowed_updates=["message"]`) và hàm xác nhận offset; dùng bởi `location_service.py`.
 - Che token trong mọi thông báo lỗi (URL chứa token). GitHub tự che Secrets trong log nhưng không dựa hoàn toàn vào đó.
 

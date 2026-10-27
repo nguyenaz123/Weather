@@ -136,6 +136,8 @@ def normalize_next_24h(raw: dict) -> dict:
             "humidity": hour["humidity"],
             "wind_kph": hour["wind_kph"],
             "condition": hour["condition"]["text"],
+            "condition_code": hour["condition"]["code"],
+            "is_day": hour["is_day"],
         }
         for day in raw["forecast"]["forecastday"]
         for hour in day["hour"]
