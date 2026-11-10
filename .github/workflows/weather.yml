@@ -1,9 +1,9 @@
 name: Weather Briefing
 
 on:
-  schedule:
-    - cron: "0 1 * * *"      # 01:00 UTC = 08:00 giờ Việt Nam (GitHub dùng UTC, có thể trễ vài phút)
-  workflow_dispatch: {}       # bấm chạy tay để thử / áp dụng địa điểm mới ngay
+  # Lịch 08:00 giờ VN do cron-job.org gọi API workflow_dispatch
+  # (không dùng `schedule` của GitHub vì thường bị trễ 5–6 tiếng).
+  workflow_dispatch: {}       # cũng có thể bấm chạy tay để thử / áp dụng địa điểm mới ngay
 
 permissions:
   contents: write             # chỉ để commit location.json
